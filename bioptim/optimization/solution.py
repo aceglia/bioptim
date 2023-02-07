@@ -416,6 +416,7 @@ class Solution:
             )
             self._complete_control()
             self.phase_time = self.ocp.v.extract_phase_time(self.vector)
+            self._time_vector = self._generate_time()
 
         def init_from_vector(_sol: Union[np.ndarray, DM]):
             """
@@ -869,7 +870,7 @@ class Solution:
             if shooting_type == Shooting.SINGLE or shooting_type == Shooting.SINGLE_DISCONTINUOUS_PHASE:
                 flat_time += [nlp.ns * dt_ns]
 
-            time_vector.append(sum(time_phase[: p + 1]) + np.array(flat_time))
+            time_vector.append(sum(time_phase[: p + 1]) + np.array(flat_time, dtype=object))
 
         if merge_phases:
             return concatenate_optimization_variables(time_vector, continuous_phase=shooting_type == Shooting.SINGLE)
@@ -1347,7 +1348,7 @@ class Solution:
 
         from ..interfaces.biorbd_model import BiorbdModel
 
-        check_version(bioviz, "2.1.0", "2.3.0")
+        check_version(bioviz, "2.3.0", "2.4.0")
 
         data_to_animate = self.integrate(shooting_type=shooting_type) if shooting_type else self.copy()
         if n_frames == 0:

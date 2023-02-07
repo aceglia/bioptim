@@ -2,15 +2,20 @@ from typing import Any, Callable
 
 import biorbd_casadi as biorbd
 from casadi import MX, horzcat, vertcat, SX, norm_fro
-import numpy as np
+from bioptim.misc.utils import check_version
+
+
+check_version(biorbd, "1.9.9", "1.10.0")
 
 
 class BiorbdModel:
     def __init__(self, bio_model: str | biorbd.Model):
         if isinstance(bio_model, str):
             self.model = biorbd.Model(bio_model)
-        else:
+        elif isinstance(bio_model, biorbd.Model):
             self.model = bio_model
+        else:
+            raise RuntimeError("Type must be a 'str' or a 'biorbd.Model'")
 
     def deep_copy(self, *args):
         return BiorbdModel(self.model.DeepCopy(*args))
@@ -297,3 +302,7 @@ class BiorbdModel:
 
     def muscle(self, idx: int) -> biorbd.Muscle:
         return self.model.muscle(idx)
+    
+    def passive_joint_torque(self, q, qdot) -> MX:
+
+        return self.model.passiveJointTorque(q, qdot).to_mx()
