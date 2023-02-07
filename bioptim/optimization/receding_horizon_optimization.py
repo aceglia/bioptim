@@ -113,6 +113,7 @@ class RecedingHorizonOptimization(OptimalControlProgram):
         sol = None
         states = []
         controls = []
+        parameters = []
 
         solver_all_iter = Solver.ACADOS() if solver is None else solver
         if solver_first_iter is None and solver is not None:
@@ -159,9 +160,10 @@ class RecedingHorizonOptimization(OptimalControlProgram):
                 real_time = perf_counter()  # Reset timer to skip the compiling time (so skip the first call to solve)
 
             # Solve and save the current window
-            _states, _controls = self.export_data(sol)
+            _states, _controls, _parameters = self.export_data(sol)
             states.append(_states)
             controls.append(_controls)
+            parameters.append(_parameters)
             if get_all_iterations:
                 all_solutions.append(sol)
 
@@ -173,7 +175,7 @@ class RecedingHorizonOptimization(OptimalControlProgram):
         real_time = perf_counter() - real_time
 
         # Prepare the modified ocp that fits the solution dimension
-        sol = self._initialize_solution(states, controls)
+        sol = self._initialize_solution(states, controls, parameters)
         sol.solver_time_to_optimize = total_time
         sol.real_time_to_optimize = real_time
         return (sol, all_solutions) if get_all_iterations else sol
@@ -192,9 +194,10 @@ class RecedingHorizonOptimization(OptimalControlProgram):
 
         self.frame_to_export = export_options["frame_to_export"]
 
-    def _initialize_solution(self, states: list, controls: list):
+    def _initialize_solution(self, states: list, controls: list, parameters: list) -> Solution:
         _states = InitialGuess(np.concatenate(states, axis=1), interpolation=InterpolationType.EACH_FRAME)
         _controls = InitialGuess(np.concatenate(controls, axis=1), interpolation=InterpolationType.EACH_FRAME)
+        _parameters = InitialGuess(np.concatenate(parameters, axis=1), interpolation=InterpolationType.EACH_FRAME)
         model_class = self.original_values["bio_model"][0][0]
         model_initializer = self.original_values["bio_model"][0][1]
         solution_ocp = OptimalControlProgram(
@@ -207,8 +210,9 @@ class RecedingHorizonOptimization(OptimalControlProgram):
             xdot_scaling=VariableScaling(key="all", scaling=np.ones((states[0].shape[0],))),
             u_scaling=VariableScaling(key="all", scaling=np.ones((controls[0].shape[0],))),
             use_sx=self.original_values["use_sx"],
+            parameters=self.original_values["parameters"],
         )
-        return Solution(solution_ocp, [_states, _controls])
+        return Solution(solution_ocp, [_states, _controls, _parameters])
 
     def advance_window(self, sol: Solution, steps: int = 0, **advance_options):
         state_bounds_have_changed = self.advance_window_bounds_states(sol, **advance_options)
@@ -221,11 +225,16 @@ class RecedingHorizonOptimization(OptimalControlProgram):
 
         init_states_have_changed = self.advance_window_initial_guess_states(sol, **advance_options)
         init_controls_have_changed = self.advance_window_initial_guess_controls(sol, **advance_options)
+        if self.nlp[0].parameters:
+            init_parameters_have_changed = self.advance_window_initial_guess_parameters(sol, **advance_options)
 
         if self.ocp_solver.opts.type != SolverType.ACADOS:
+            self.nlp[0].parameters[0].initial_guess.name = self.nlp[0].parameters.names[0]
+
             self.update_initial_guess(
                 self.nlp[0].x_init if init_states_have_changed else None,
                 self.nlp[0].u_init if init_controls_have_changed else None,
+                self.nlp[0].parameters[0].initial_guess if init_parameters_have_changed else None,
             )
 
     def advance_window_bounds_states(self, sol, **advance_options):
@@ -257,6 +266,11 @@ class RecedingHorizonOptimization(OptimalControlProgram):
         )
         return True
 
+    def advance_window_initial_guess_parameters(self, sol, **advance_options):
+        for i in range(len(self.nlp[0].parameters)):
+            self.nlp[0].parameters[i].initial_guess.init[:, :] = sol.parameters["all"]
+        return True
+
     def advance_window_initial_guess_controls(self, sol, **advance_options):
         if self.nlp[0].u_init.type != InterpolationType.EACH_FRAME:
             self.nlp[0].u_init = InitialGuess(
@@ -271,7 +285,8 @@ class RecedingHorizonOptimization(OptimalControlProgram):
     def export_data(self, sol) -> tuple:
         states = sol.states["all"][:, self.frame_to_export]
         controls = sol.controls["all"][:, self.frame_to_export]
-        return states, controls
+        parameters = sol.parameters["all"][:]
+        return states, controls, parameters
 
     def _define_time(self, phase_time: Union[int, float, list, tuple], objective_functions, constraints):
         """

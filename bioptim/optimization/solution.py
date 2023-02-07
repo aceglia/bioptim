@@ -364,7 +364,7 @@ class Solution:
                     for _ in range(len(self.ns)):
                         tp.add(deepcopy(_sol[i].init), interpolation=_sol[i].init.type)
                     _sol[i] = tp
-            if sum([isinstance(s, InitialGuessList) for s in _sol]) != 2:
+            if sum([isinstance(s, InitialGuessList) for s in _sol]) not in [2, 3]:
                 raise ValueError(
                     "solution must be a solution dict, "
                     "an InitialGuess[List] of len 2 or 3 (states, controls, parameters), "
@@ -401,7 +401,14 @@ class Solution:
             if n_param:
                 sol_params = _sol[2]
                 for p, s in enumerate(sol_params):
-                    self.vector = np.concatenate((self.vector, np.repeat(s.init, self.ns[p] + 1)[:, np.newaxis]))
+                    if s.shape != (n_param, 1):
+                        ns = self.ocp.nlp[p].ns + 1 if s.init.type != InterpolationType.EACH_FRAME else self.ocp.nlp[
+                                p].ns
+                        s.init.check_and_adjust_dimensions(self.ocp.nlp[p].parameters.shape, ns, "parameters")
+                        for i in range(self.ns[p] + 1):
+                            self.vector = np.concatenate((self.vector, s.init.evaluate_at(i)[:, np.newaxis]))
+                    else:
+                        self.vector = np.concatenate((self.vector, np.repeat(s.init, self.ns[p] + 1)[:, np.newaxis]))
 
             self._states["scaled"], self._controls["scaled"], self.parameters = self.ocp.v.to_dictionaries(self.vector)
             self._states["unscaled"], self._controls["unscaled"] = self._to_unscaled_values(

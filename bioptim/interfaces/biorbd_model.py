@@ -294,3 +294,6 @@ class BiorbdModel:
             return all_forces
         else:
             return self.contact_forces_from_constrained_forward_dynamics(q, qdot, tau, external_forces=None)
+
+    def muscle(self, idx: int) -> biorbd.Muscle:
+        return self.model.muscle(idx)

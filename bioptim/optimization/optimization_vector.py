@@ -327,16 +327,17 @@ class OptimizationVector:
 
         offset = self.n_all_x + self.n_all_u
         scaling_offset = 0
-        data_parameters["all"] = v_array[offset:, np.newaxis] * ocp.nlp[0].parameters.scaling
+        if self.parameters_in_list:
+            data_parameters["all"] = v_array[offset:].reshape((ocp.nlp[0].parameters.shape, -1), order="F") * ocp.nlp[0].parameters.scaling
+        # data_parameters["all"] = v_array[offset:, np.newaxis] * ocp.nlp[0].parameters.scaling
         if len(data_parameters["all"].shape) == 1:
             data_parameters["all"] = data_parameters["all"][:, np.newaxis]
         for param in self.parameters_in_list:
-            data_parameters[param.name] = v_array[offset : offset + param.size, np.newaxis] * param.scaling
-            offset += param.size
-            scaling_offset += param.size
+            data_parameters[param.name] = v_array[offset:].reshape((ocp.nlp[0].parameters.shape, -1), order="F") * ocp.nlp[0].parameters.scaling
             if len(data_parameters[param.name].shape) == 1:
                 data_parameters[param.name] = data_parameters[param.name][:, np.newaxis]
-
+            offset += data_parameters[param.name].shape[0] * data_parameters[param.name].shape[1]
+            scaling_offset += param.size
         return data_states, data_controls, data_parameters
 
     def define_ocp_shooting_points(self):
